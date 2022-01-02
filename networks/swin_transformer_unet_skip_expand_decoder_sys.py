@@ -678,6 +678,8 @@ class SwinTransformerSys(nn.Module):
             self.output = nn.Conv2d(in_channels=embed_dim, out_channels=self.num_classes, kernel_size=1, bias=False)
 
         self.apply(self._init_weights)
+        self.tail = self.forward_tail
+        self.head = self.forward_head
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -696,8 +698,7 @@ class SwinTransformerSys(nn.Module):
     def no_weight_decay_keywords(self):
         return {'relative_position_bias_table'}
 
-    @staticmethod
-    def forward_tail(x):
+    def forward_tail(self, x):
         # in size = N x 4 x 240 x 240 x 155
         # out size = N x 1 x 224 x 224 for brats
         x = nn.Conv3d(in_channels=4, out_channels=1, kernel_size=3, padding=(1, 1, 1))(x)
@@ -708,8 +709,7 @@ class SwinTransformerSys(nn.Module):
         # print("tail shape : ", x.shape)
         return x
 
-    @staticmethod
-    def forward_head(x):
+    def forward_head(self, x):
         x = nn.AdaptiveAvgPool2d((240, 240))(x)
         x = x.unsqueeze(dim=1)
         x = nn.Conv3d(in_channels=1, out_channels=155, kernel_size=3, padding=(1, 1, 1))(x)
