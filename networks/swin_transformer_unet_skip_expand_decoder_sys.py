@@ -696,6 +696,28 @@ class SwinTransformerSys(nn.Module):
     def no_weight_decay_keywords(self):
         return {'relative_position_bias_table'}
 
+    @staticmethod
+    def forward_tail(x):
+        # in size = N x 4 x 240 x 240 x 155
+        # out size = N x 1 x 224 x 224 for brats
+        x = nn.Conv3d(in_channels=4, out_channels=1, kernel_size=3, padding=(1, 1, 1))(x)
+        x = x.squeeze(dim=1).permute(0, 3, 1, 2)
+        x = nn.Conv2d(in_channels=155, out_channels=3, kernel_size=3, padding=(1, 1))(x)
+        x = nn.AdaptiveAvgPool2d((224, 224))(x)
+        # x = x.squeeze(dim=1)
+        # print("tail shape : ", x.shape)
+        return x
+
+    @staticmethod
+    def forward_head(x):
+        x = nn.AdaptiveAvgPool2d((240, 240))(x)
+        x = x.unsqueeze(dim=1)
+        x = nn.Conv3d(in_channels=1, out_channels=155, kernel_size=3, padding=(1, 1, 1))(x)
+        x = x.permute(0, 2, 3, 4, 1)
+        # x = nn.Softmax(dim=1)(x)
+        # print("head shape : ", x.shape)
+        return x
+
     # Encoder and Bottleneck
     def forward_features(self, x):
         x = self.patch_embed(x)
@@ -740,10 +762,11 @@ class SwinTransformerSys(nn.Module):
         return x
 
     def forward(self, x):
+        x = self.forward_tail(x)
         x, x_downsample = self.forward_features(x)
         x = self.forward_up_features(x, x_downsample)
         x = self.up_x4(x)
-
+        x = self.forward_head(x)
         return x
 
     def flops(self):

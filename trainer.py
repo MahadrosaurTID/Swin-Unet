@@ -99,7 +99,7 @@ def trainer_synapse(args, model, snapshot_path):
 
 
 def trainer_brats(args, model, snapshot_path):
-    from datasets.dataset_brats import brats_dataset_2d
+    from datasets.dataset_brats import brats_dataset_3d
     logging.basicConfig(filename=snapshot_path + "/log.txt", level=logging.INFO,
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
@@ -108,7 +108,7 @@ def trainer_brats(args, model, snapshot_path):
     num_classes = args.num_classes
     batch_size = args.batch_size * args.n_gpu
     # max_iterations = args.max_iterations
-    db_train = brats_dataset_2d(base_dir=args.root_path)
+    db_train = brats_dataset_3d(base_dir=args.root_path)
     print("The length of train set is: {}".format(len(db_train)))
 
     def worker_init_fn(worker_id):
@@ -137,9 +137,12 @@ def trainer_brats(args, model, snapshot_path):
             # image_batch, label_batch = image_batch.cuda(), label_batch.cuda()
             image_batch, label_batch = image_batch, label_batch
             outputs = model(image_batch)
-            loss_ce = ce_loss(outputs, label_batch[:].long())
-            loss_dice = dice_loss(outputs, label_batch, softmax=True)
-            loss = 0.4 * loss_ce + 0.6 * loss_dice
+            # outputs = torch.argmax(outputs, dim=1)
+            # print("out : ", outputs.shape)
+            loss_ce = ce_loss(outputs.float(), label_batch[:].long())
+            # loss_dice = dice_loss(outputs, label_batch, softmax=True)
+            # loss = 0.6 * loss_ce + 0.4 * loss_dice
+            loss = loss_ce
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -150,12 +153,13 @@ def trainer_brats(args, model, snapshot_path):
             iter_num = iter_num + 1
             writer.add_scalar('info/lr', lr_, iter_num)
             writer.add_scalar('info/total_loss', loss, iter_num)
-            writer.add_scalar('info/loss_ce', loss_ce, iter_num)
+            # writer.add_scalar('info/loss_ce', loss_ce, iter_num)
 
             logging.info('iteration %d : loss : %f, loss_ce: %f' % (iter_num, loss.item(), loss_ce.item()))
+            # logging.info('iteration %d : , loss_dice: %f' % (iter_num, loss_dice.item()))
 
             if iter_num % 20 == 0:
-                print("image batch shape", image_batch.shape)
+                # print("image batch shape", image_batch.shape)
                 image = image_batch[1, 0:1, :, :]
                 image = (image - image.min()) / (image.max() - image.min())
                 writer.add_image('train/Image', image, iter_num)
