@@ -560,6 +560,37 @@ class PatchEmbed(nn.Module):
         return flops
 
 
+class forward_tail(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        # in size = N x 4 x 240 x 240 x 155
+        # out size = N x 1 x 224 x 224 for brats
+        x = nn.Conv3d(in_channels=4, out_channels=1, kernel_size=3, padding=(1, 1, 1))(x)
+        x = x.squeeze(dim=1).permute(0, 3, 1, 2)
+        x = nn.Conv2d(in_channels=155, out_channels=3, kernel_size=3, padding=(1, 1))(x)
+        x = nn.AdaptiveAvgPool2d((224, 224))(x)
+        # x = x.squeeze(dim=1)
+        # print("tail shape : ", x.shape)
+        return x
+
+
+class forward_head(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = nn.AdaptiveAvgPool2d((240, 240))(x)
+        x = x.unsqueeze(dim=1)
+        x = nn.Conv3d(in_channels=1, out_channels=155, kernel_size=3, padding=(1, 1, 1))(x)
+        x = x.permute(0, 2, 3, 4, 1)
+        # x = nn.Softmax(dim=1)(x)
+        # print("head shape : ", x.shape)
+        return x
+
+
 class SwinTransformerSys(nn.Module):
     r""" Swin Transformer
         A PyTorch impl of : `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows`  -
@@ -678,8 +709,8 @@ class SwinTransformerSys(nn.Module):
             self.output = nn.Conv2d(in_channels=embed_dim, out_channels=self.num_classes, kernel_size=1, bias=False)
 
         self.apply(self._init_weights)
-        self.tail = self.forward_tail
-        self.head = self.forward_head
+        self.tail = forward_tail()
+        self.head = forward_head()
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -697,26 +728,6 @@ class SwinTransformerSys(nn.Module):
     @torch.jit.ignore
     def no_weight_decay_keywords(self):
         return {'relative_position_bias_table'}
-
-    def forward_tail(self, x):
-        # in size = N x 4 x 240 x 240 x 155
-        # out size = N x 1 x 224 x 224 for brats
-        x = nn.Conv3d(in_channels=4, out_channels=1, kernel_size=3, padding=(1, 1, 1))(x)
-        x = x.squeeze(dim=1).permute(0, 3, 1, 2)
-        x = nn.Conv2d(in_channels=155, out_channels=3, kernel_size=3, padding=(1, 1))(x)
-        x = nn.AdaptiveAvgPool2d((224, 224))(x)
-        # x = x.squeeze(dim=1)
-        # print("tail shape : ", x.shape)
-        return x
-
-    def forward_head(self, x):
-        x = nn.AdaptiveAvgPool2d((240, 240))(x)
-        x = x.unsqueeze(dim=1)
-        x = nn.Conv3d(in_channels=1, out_channels=155, kernel_size=3, padding=(1, 1, 1))(x)
-        x = x.permute(0, 2, 3, 4, 1)
-        # x = nn.Softmax(dim=1)(x)
-        # print("head shape : ", x.shape)
-        return x
 
     # Encoder and Bottleneck
     def forward_features(self, x):
@@ -762,11 +773,11 @@ class SwinTransformerSys(nn.Module):
         return x
 
     def forward(self, x):
-        x = self.forward_tail(x)
+        x = self.tail(x)
         x, x_downsample = self.forward_features(x)
         x = self.forward_up_features(x, x_downsample)
         x = self.up_x4(x)
-        x = self.forward_head(x)
+        x = self.head(x)
         return x
 
     def flops(self):
