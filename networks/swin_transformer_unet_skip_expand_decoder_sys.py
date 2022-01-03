@@ -573,7 +573,7 @@ class forward_tail(nn.Module):
         # in size = N x 4 x 240 x 240 x 155
         # out size = N x 1 x 224 x 224 for brats
         x = self.conv3d(x)
-        x = x.squeeze(dim=1).permute(0, 3, 1, 2)
+        x = x.squeeze(dim=1).permute(0, 3, 1, 2).contiguous()
         x = self.conv2d(x)
         x = self.adap_pool(x)
         # x = x.squeeze(dim=1)
@@ -591,7 +591,7 @@ class forward_head(nn.Module):
         x = self.adap_pool(x)
         x = x.unsqueeze(dim=1)
         x = self.conv3d(x)
-        x = x.permute(0, 2, 3, 4, 1)
+        x = x.permute(0, 2, 3, 4, 1).contiguous()
         # x = nn.Softmax(dim=1)(x)
         # print("head shape : ", x.shape)
         return x
