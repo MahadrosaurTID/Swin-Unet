@@ -122,7 +122,15 @@ def trainer_brats(args, model, snapshot_path):
     model.train()
     ce_loss = CrossEntropyLoss()
     dice_loss = DiceLoss(num_classes)
-    optimizer = optim.SGD(model.parameters(), lr=base_lr, momentum=0.9, weight_decay=0.0001)
+    optimizer = optim.SGD([
+        {"params": model.swin_unet.tail.parameters(), "lr": 1e-1},
+        {"params": model.swin_unet.head.parameters(), "lr": 1e-2},
+    ],
+        lr=base_lr,
+        momentum=0.9,
+        weight_decay=0.0001,
+    )
+    # optimizer = optim.SGD(model.parameters(), lr=base_lr, momentum=0.9, weight_decay=0.0001)
     scheduler = StepLR(optimizer, step_size=20, gamma=0.1)
     writer = SummaryWriter(snapshot_path + '/log')
     iter_num = 0
