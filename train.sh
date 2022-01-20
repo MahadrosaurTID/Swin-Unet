@@ -38,7 +38,7 @@ if [$img_size]
 then
     IMG_SIZE = $img_size
 else
-    IMG_SIZE = 224
+    IMG_SIZE = 256
 fi
 
 if [$batch_size]

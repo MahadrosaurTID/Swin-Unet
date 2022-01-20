@@ -29,7 +29,7 @@ parser.add_argument('--max_iterations', type=int,default=30000, help='maximum ep
 parser.add_argument('--max_epochs', type=int, default=150, help='maximum epoch number to train')
 parser.add_argument('--batch_size', type=int, default=24,
                     help='batch_size per gpu')
-parser.add_argument('--img_size', type=int, default=224, help='input patch size of network input')
+parser.add_argument('--img_size', type=int, default=256, help='input patch size of network input')
 parser.add_argument('--is_savenii', action="store_true", help='whether to save results during inference')
 parser.add_argument('--test_save_dir', type=str, default='../predictions', help='saving prediction as nii!')
 parser.add_argument('--deterministic', type=int,  default=1, help='whether use deterministic training')
