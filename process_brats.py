@@ -19,15 +19,23 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
-    img_dir_paths = glob.glob(os.path.join(base_dir, '*'))
+    img_dir_paths = glob.glob(os.path.join(base_dir, 'images', '*'))
+
     for img_dir in img_dir_paths:
         filenames = os.listdir(img_dir)
         for filename in filenames:
             dat = nb.load(os.path.join(img_dir, filename)).get_fdata()
             for i in range(dat.shape[2]):
                 dat_slice = dat[:, :, i]
-                if "_seg"+ext in filename:
-                    out_path = os.path.join(out_dir, 'labels', filename.replace("_seg"+ext, "_")+str(i)+".npy")
-                else:
-                    out_path = os.path.join(out_dir, 'images', filename.replace(ext, "_")+str(i)+".npy")
+                out_path = os.path.join(out_dir, 'images', filename.replace(ext, "_")+str(i)+".npy")
+                np.save(out_path, dat_slice)
+
+    label_dir_paths = glob.glob(os.path.join(base_dir, 'labels', '*'))
+    for label_dir in label_dir_paths:
+        filenames = os.listdir(label_dir)
+        for filename in filenames:
+            dat = nb.load(os.path.join(label_dir, filename)).get_fdata()
+            for i in range(dat.shape[2]):
+                dat_slice = dat[:, :, i]
+                out_path = os.path.join(out_dir, 'labels', filename.replace(ext, "_")+str(i)+".npy")
                 np.save(out_path, dat_slice)
