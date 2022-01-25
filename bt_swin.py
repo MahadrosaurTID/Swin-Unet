@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
 from einops import rearrange
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
-from torch.nn import functional as F
 
 
 class Mlp(nn.Module):
@@ -587,7 +586,7 @@ class SwinTransformerSys(nn.Module):
         use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False
     """
 
-    def __init__(self, img_size=240, patch_size=4, batch_size=16, in_chans=3, num_classes=1000,
+    def __init__(self, img_size=240, patch_size=4, in_chans=3, num_classes=1000,
                  embed_dim=96, depths=[2, 2, 2, 2], depths_decoder=[1, 2, 2, 2], num_heads=[3, 6, 12, 24],
                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
@@ -602,7 +601,6 @@ class SwinTransformerSys(nn.Module):
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
         self.ape = ape
-        self.b_size = batch_size
         self.patch_norm = patch_norm
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
         self.num_features_up = int(embed_dim * 2)
@@ -674,12 +672,6 @@ class SwinTransformerSys(nn.Module):
         self.norm = norm_layer(self.num_features)
         self.norm_up = norm_layer(self.embed_dim)
 
-        self.bt_gap = nn.AvgPool2d(kernel_size=5, stride=4)
-        self.bt_bn = nn.BatchNorm1d(4096)
-        self.bt_relu = nn.ReLU()
-        self.bt_fc = nn.Linear(in_features=15 * 191, out_features=4096)
-        self.bt_fc2 = nn.Linear(in_features=4096, out_features=256)
-
         if self.final_upsample == "expand_first":
             print("---final upsample expand_first---")
             self.up = FinalPatchExpand_X4(input_resolution=(img_size // patch_size, img_size // patch_size), dim_scale=4, dim=embed_dim)
@@ -727,7 +719,7 @@ class SwinTransformerSys(nn.Module):
                 x = layer_up(x)
             else:
                 x = torch.cat([x, x_downsample[3 - inx]], -1)
-                x = self.concat_back_dim[inx](191)
+                x = self.concat_back_dim[inx](x)
                 x = layer_up(x)
 
         x = self.norm_up(x)  # B L C
@@ -747,22 +739,10 @@ class SwinTransformerSys(nn.Module):
 
         return x
 
-    def forward(self, x1, x2):
-        x1, x1_downsample = self.forward_features(x1)
-        x2, x2_downsample = self.forward_features(x2)
+    def forward(self, x):
+        x, x_downsample = self.forward_features(x)
 
-        x1 = self.bt_gap(x1)
-        x2 = self.bt_gap(x2)
-        x1 = self.bt_relu(self.bt_fc(torch.flatten(x1, 1)))
-        x2 = self.bt_relu(self.bt_fc(torch.flatten(x2, 1)))
-
-        x1 = self.bt_bn(x1)
-        x2 = self.bt_bn(x2)
-
-        x1 = self.bt_fc2(torch.flatten(x1, 1))
-        x2 = self.bt_fc2(torch.flatten(x2, 1))
-
-        return x1, x2
+        return x
 
     def flops(self):
         flops = 0
