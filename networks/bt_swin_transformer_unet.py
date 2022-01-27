@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
 from einops import rearrange
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+from torch.nn import functional as F
 
 
 class Mlp(nn.Module):
@@ -586,7 +587,7 @@ class SwinTransformerSys(nn.Module):
         use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False
     """
 
-    def __init__(self, img_size=240, patch_size=4, in_chans=3, num_classes=1000,
+    def __init__(self, img_size=240, patch_size=4, batch_size=16, in_chans=3, num_classes=1000,
                  embed_dim=96, depths=[2, 2, 2, 2], depths_decoder=[1, 2, 2, 2], num_heads=[3, 6, 12, 24],
                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
@@ -601,6 +602,7 @@ class SwinTransformerSys(nn.Module):
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
         self.ape = ape
+        self.b_size = batch_size
         self.patch_norm = patch_norm
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
         self.num_features_up = int(embed_dim * 2)
@@ -672,6 +674,12 @@ class SwinTransformerSys(nn.Module):
         self.norm = norm_layer(self.num_features)
         self.norm_up = norm_layer(self.embed_dim)
 
+        self.bt_gap = nn.AvgPool2d(kernel_size=5, stride=4)
+        self.bt_bn = nn.BatchNorm1d(4096)
+        self.bt_relu = nn.ReLU()
+        self.bt_fc = nn.Linear(in_features=15 * 191, out_features=4096)
+        self.bt_fc2 = nn.Linear(in_features=4096, out_features=256)
+
         if self.final_upsample == "expand_first":
             print("---final upsample expand_first---")
             self.up = FinalPatchExpand_X4(input_resolution=(img_size // patch_size, img_size // patch_size), dim_scale=4, dim=embed_dim)
@@ -712,39 +720,49 @@ class SwinTransformerSys(nn.Module):
 
         return x, x_downsample
 
-    # Dencoder and Skip connection
-    def forward_up_features(self, x, x_downsample):
-        for inx, layer_up in enumerate(self.layers_up):
-            if inx == 0:
-                x = layer_up(x)
-            else:
-                x = torch.cat([x, x_downsample[3 - inx]], -1)
-                x = self.concat_back_dim[inx](x)
-                x = layer_up(x)
+    # # Dencoder and Skip connection
+    # def forward_up_features(self, x, x_downsample):
+    #     for inx, layer_up in enumerate(self.layers_up):
+    #         if inx == 0:
+    #             x = layer_up(x)
+    #         else:
+    #             x = torch.cat([x, x_downsample[3 - inx]], -1)
+    #             x = self.concat_back_dim[inx](191)
+    #             x = layer_up(x)
+    #
+    #     x = self.norm_up(x)  # B L C
+    #
+    #     return x
 
-        x = self.norm_up(x)  # B L C
+    # def up_x4(self, x):
+    #     H, W = self.patches_resolution
+    #     B, L, C = x.shape
+    #     assert L == H * W, "input features has wrong size"
+    #
+    #     if self.final_upsample == "expand_first":
+    #         x = self.up(x)
+    #         x = x.view(B, 4 * H, 4 * W, -1)
+    #         x = x.permute(0, 3, 1, 2)  # B,C,H,W
+    #         x = self.output(x)
+    #
+    #     return x
 
-        return x
+    def forward(self, x1, x2):
+        x1, x1_downsample = self.forward_features(x1)
+        x2, x2_downsample = self.forward_features(x2)
 
-    def up_x4(self, x):
-        H, W = self.patches_resolution
-        B, L, C = x.shape
-        assert L == H * W, "input features has wrong size"
+        x1 = self.bt_gap(x1)
+        x2 = self.bt_gap(x2)
+        x1 = self.bt_relu(self.bt_fc(torch.flatten(x1, 1)))
+        x2 = self.bt_relu(self.bt_fc(torch.flatten(x2, 1)))
 
-        if self.final_upsample == "expand_first":
-            x = self.up(x)
-            x = x.view(B, 4 * H, 4 * W, -1)
-            x = x.permute(0, 3, 1, 2)  # B,C,H,W
-            x = self.output(x)
+        x1 = self.bt_bn(x1)
+        x2 = self.bt_bn(x2)
 
-        return x
+        x1 = self.bt_fc2(torch.flatten(x1, 1))
+        x2 = self.bt_fc2(torch.flatten(x2, 1))
 
-    def forward(self, x):
-        x, x_downsample = self.forward_features(x)
-        x = self.forward_up_features(x, x_downsample)
-        x = self.up_x4(x)
-
-        return x
+        return x1, x2
 
     def flops(self):
         flops = 0

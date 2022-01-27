@@ -2,12 +2,14 @@ from datasets.dataset_brats import brats_dataset
 from torch.utils.data import DataLoader
 import torch
 from matplotlib import pyplot as plt
-from networks.vision_transformer import SwinUnet as ViT_seg
+from networks.vision_transformer_bt import SwinUnet as ViT_seg
 from config import get_config
 import os
 import argparse
+from torch.nn import MSELoss
+from torch.optim import Adam
+from torch.optim.lr_scheduler import CosineAnnealingLR
 import numpy as np
-from scipy.signal import correlate
 
 
 parser = argparse.ArgumentParser()
@@ -66,15 +68,45 @@ args = parser.parse_args()
 
 if __name__ == '__main__':
     ds_train = brats_dataset('brats_dataset_processed')
-    dl_train = DataLoader(ds_train, batch_size=16)
+    bs = 16
+    base_lr = 0.01
+    n_epochs = 100
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    dl_train = DataLoader(ds_train, batch_size=bs)
     net = ViT_seg(get_config(args), img_size=256, num_classes=4)
-    for img1, img2, lbl in dl_train:
-        out1, out2 = net(img1, img2)
-        out1_np = out1.detach().cpu().numpy()
-        out2_np = out2.detach().cpu().numpy()
-        corrs = []
-        for i in range(0, out1_np.shape[0]):
-            corrs.append(correlate(out1_np[i, :], out2_np[i, :], mode='full'))
-        corrs = np.array(corrs)
-        gt = np.array([np.eye(out1_np.shape[1])] * out1_np.shape[0])
-        print()
+    net = net.to(device)
+
+    criterion = MSELoss()
+    optimizer = Adam(lr=base_lr, params=net.parameters())
+    scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=n_epochs*len(dl_train), eta_min=0.00001)
+
+    for epoch in range(n_epochs):
+        net.train()
+        losses = []
+        for img1, img2, lbl in dl_train:
+            img1 = img1.to(device)
+            img2 = img2.to(device)
+            optimizer.zero_grad()
+            out1, out2 = net(img1, img2)
+
+            # out1_np = out1.detach().cpu().numpy()
+            # out2_np = out2.detach().cpu().numpy()
+
+            out1_np_norm = (out1 - out1.mean(0)) / out1.std(0)
+            out2_np_norm = (out2 - out2.mean(0)) / out2.std(0)
+
+            cc = torch.matmul(out1_np_norm.T, out2_np_norm).to(device)
+
+            gt = torch.eye(cc.shape[0]).to(device)
+
+            loss = criterion(cc, gt)
+            loss.backward()
+
+            optimizer.step()
+            scheduler.step()
+
+            losses.append(loss.item())
+    print("epoch loss : ", round(np.mean(losses), 4))
+
+    torch.save(net, 'bt_pretrained_swin.pt')
