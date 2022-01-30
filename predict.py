@@ -10,7 +10,6 @@ from torchvision import transforms
 from matplotlib import pyplot as plt
 from torch.nn import functional as F
 from pathlib import Path
-from metrics import *
 from utils import DiceLoss
 
 
